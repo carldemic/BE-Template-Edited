@@ -255,34 +255,9 @@ app.post('/balances/deposit/:userId',getProfile ,async (req, res) =>{
 	}
 
     return res.json(client)
-    
- //    const transaction = await sequelize.transaction()
-
- //    // Try to perform the tansaction, roll back if errors occur
-	// try{
-
- //    	const client = await Profile.findOne({ where:{ id: userId }})
-
-	// 	// Check the client budget and return 402 Payment Required if it's not enough
-	// 	if(job.price > client.balance)
-	// 		return res.status(402).end()
-		
-	// 	client.balance -= job.price
-	// 	client.save()
-
-	// 	job.paid = 1
- //   		job.save()
-
- //   		transaction.commit()
- //   		res.json(job)
-	// }
-	// catch(error){
-	// 	await transaction.rollback()
-	// 	// send "error" to logging system
-	// 	console.log(error)
-	// 	return res.status(500).end(error)
-	// }
 
 })
+
+
 
 module.exports = app;
