@@ -153,8 +153,136 @@ app.post('/jobs/:id/pay',getProfile ,async (req, res) =>{
 		return res.status(500).end(error)
 	}
 
+})
+
+
+app.post('/jobs/:id/pay',getProfile ,async (req, res) =>{
+	const {Contract, Job, Profile} = req.app.get('models')
+    const jobId = req.params.id
+    const profileId  = req.profile.id
+
+    // Get the job
+
+    const jobFilter = 
+    	{
+    		where:{
+					id: jobId,
+					paid: {[Op.eq]: null},
+			},
+    		include: [
+    			{
+    				model: Contract,
+    				where: {
+						ClientId: profileId
+    				}
+    			}
+    		]
+    	}
+
+    var job = await Job.findOne(jobFilter)
+    if(!job) return res.status(404).end()
+    
+    const transaction = await sequelize.transaction()
+
+    // Try to perform the tansaction, roll back if errors occur
+	try{
+
+    	const client = await Profile.findOne({ where:{ id: profileId }})
+
+		// Check the client budget and return 402 Payment Required if it's not enough
+		if(job.price > client.balance)
+			return res.status(402).end()
+		
+		client.balance -= job.price
+		client.save()
+
+		job.paid = 1
+   		job.save()
+
+   		transaction.commit()
+   		res.json(job)
+	}
+	catch(error){
+		await transaction.rollback()
+		// send "error" to logging system
+		console.log(error)
+		return res.status(500).end(error)
+	}
 
 })
 
+app.post('/balances/deposit/:userId',getProfile ,async (req, res) =>{
+	const {Contract, Job, Profile} = req.app.get('models')
+    const userId = req.params.userId
+    const amount  = req.body.amount
+
+    // TODO: It's not clear who can deposit where... enabling deposit for everyone to every client
+
+    // Check the client's total Jobs to Pay ( amount <= 0.25 * total )
+
+    const jobsFilter = 
+    	{
+    		where:{
+					paid: {[Op.eq]: null},
+			},
+    		include: [
+    			{
+    				model: Contract,
+    				where: {
+						ClientId: userId
+    				}
+    			}
+    		]
+    	}
+    
+    const client = await Profile.findOne({ where:{ id: userId }})
+
+    var jobs = await Job.findAll(jobsFilter)
+    if(!jobs) return res.status(404).end()
+
+	total = jobs.reduce(( accumulator, job ) => accumulator + job.price, 0);
+	
+	if(amount > 0.25*total) return res.status(412).end("Amount over 25% of total to be paid")
+
+	client.balance += amount;
+	
+	try{
+		client.save()
+	}
+	catch(error){
+		console.log(error)
+		return res.status(500).end()
+	}
+
+    return res.json(client)
+    
+ //    const transaction = await sequelize.transaction()
+
+ //    // Try to perform the tansaction, roll back if errors occur
+	// try{
+
+ //    	const client = await Profile.findOne({ where:{ id: userId }})
+
+	// 	// Check the client budget and return 402 Payment Required if it's not enough
+	// 	if(job.price > client.balance)
+	// 		return res.status(402).end()
+		
+	// 	client.balance -= job.price
+	// 	client.save()
+
+	// 	job.paid = 1
+ //   		job.save()
+
+ //   		transaction.commit()
+ //   		res.json(job)
+	// }
+	// catch(error){
+	// 	await transaction.rollback()
+	// 	// send "error" to logging system
+	// 	console.log(error)
+	// 	return res.status(500).end(error)
+	// }
+
+})
 
 module.exports = app;
