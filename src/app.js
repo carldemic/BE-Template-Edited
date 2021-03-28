@@ -16,19 +16,20 @@ app.get('/contracts/:id',getProfile ,async (req, res) =>{
     const contractId = req.params.id
     const profileId  = req.profile.id
 
-    const contractFilter = {
-    							where:{
-    								id: contractId,
-    								[Op.or]: [
-    									{
-    										ContractorId: profileId
-    									},
-    									{
-    										ClientId: profileId
-    									}
-    								]
-    							}
-    						}
+    const contractFilter = 
+    	{
+    		where:{
+    				id: contractId,
+    				[Op.or]: [
+    					{
+    						ContractorId: profileId
+    					},
+    					{
+    						ClientId: profileId
+    					}
+    				]
+    			}
+    	}
 
     const contract = await Contract.findOne(contractFilter)
 
