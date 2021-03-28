@@ -99,4 +99,62 @@ app.get('/jobs/unpaid',getProfile ,async (req, res) =>{
     res.json(unpaidJobs)
 })
 
+
+app.post('/jobs/:id/pay',getProfile ,async (req, res) =>{
+	const {Contract, Job, Profile} = req.app.get('models')
+    const jobId = req.params.id
+    const profileId  = req.profile.id
+
+    // Get the job
+
+    const jobFilter = 
+    	{
+    		where:{
+					id: jobId,
+					paid: {[Op.eq]: null},
+			},
+    		include: [
+    			{
+    				model: Contract,
+    				where: {
+						ClientId: profileId
+    				}
+    			}
+    		]
+    	}
+
+    var job = await Job.findOne(jobFilter)
+    if(!job) return res.status(404).end()
+    
+    const transaction = await sequelize.transaction()
+
+    // Try to perform the tansaction, roll back if errors occur
+	try{
+
+    	const client = await Profile.findOne({ where:{ id: profileId }})
+
+		// Check the client budget and return 402 Payment Required if it's not enough
+		if(job.price > client.balance)
+			return res.status(402).end()
+		
+		client.balance -= job.price
+		client.save()
+
+		job.paid = 1
+   		job.save()
+
+   		transaction.commit()
+   		res.json(job)
+	}
+	catch(error){
+		await transaction.rollback()
+		// send "error" to logging system
+		console.log(error)
+		return res.status(500).end(error)
+	}
+
+
+})
+
+
 module.exports = app;
