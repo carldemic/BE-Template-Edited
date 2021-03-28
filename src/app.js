@@ -135,7 +135,7 @@ app.post('/jobs/:id/pay',getProfile ,async (req, res) =>{
 
 		// Check the client budget and return 402 Payment Required if it's not enough
 		if(job.price > client.balance)
-			return res.status(402).end()
+			return res.status(402).end("Insufficient balance")
 		
 		client.balance -= job.price
 		client.save()
@@ -150,66 +150,13 @@ app.post('/jobs/:id/pay',getProfile ,async (req, res) =>{
 		await transaction.rollback()
 		// send "error" to logging system
 		console.log(error)
-		return res.status(500).end(error)
+		return res.status(500).end("Error, transaction rolled back")
 	}
 
 })
 
 
-app.post('/jobs/:id/pay',getProfile ,async (req, res) =>{
-	const {Contract, Job, Profile} = req.app.get('models')
-    const jobId = req.params.id
-    const profileId  = req.profile.id
 
-    // Get the job
-
-    const jobFilter = 
-    	{
-    		where:{
-					id: jobId,
-					paid: {[Op.eq]: null},
-			},
-    		include: [
-    			{
-    				model: Contract,
-    				where: {
-						ClientId: profileId
-    				}
-    			}
-    		]
-    	}
-
-    var job = await Job.findOne(jobFilter)
-    if(!job) return res.status(404).end()
-    
-    const transaction = await sequelize.transaction()
-
-    // Try to perform the tansaction, roll back if errors occur
-	try{
-
-    	const client = await Profile.findOne({ where:{ id: profileId }})
-
-		// Check the client budget and return 402 Payment Required if it's not enough
-		if(job.price > client.balance)
-			return res.status(402).end()
-		
-		client.balance -= job.price
-		client.save()
-
-		job.paid = 1
-   		job.save()
-
-   		transaction.commit()
-   		res.json(job)
-	}
-	catch(error){
-		await transaction.rollback()
-		// send "error" to logging system
-		console.log(error)
-		return res.status(500).end(error)
-	}
-
-})
 
 app.post('/balances/deposit/:userId',getProfile ,async (req, res) =>{
 	const {Contract, Job, Profile} = req.app.get('models')
@@ -235,7 +182,7 @@ app.post('/balances/deposit/:userId',getProfile ,async (req, res) =>{
     		]
     	}
     
-    const client = await Profile.findOne({ where:{ id: userId }})
+    var client = await Profile.findOne({ where:{ id: userId }})
 
     var jobs = await Job.findAll(jobsFilter)
     if(!jobs) return res.status(404).end()
@@ -259,5 +206,126 @@ app.post('/balances/deposit/:userId',getProfile ,async (req, res) =>{
 })
 
 
+app.get('/admin/best-profession',getProfile ,async (req, res) =>{
+	const {Contract, Job, Profile} = req.app.get('models')
+    const profileId  = req.profile.id // TODO: authentication? 
+
+	const start = req.query.start
+	const end = req.query.end
+
+	if(start == undefined || end == undefined) return res.status(400).end("Start and end parameters required in the query string")
+
+    const jobsFilter = 
+    	{
+    		where:{
+					paid: 1,
+					paymentDate: {[Op.between]: [start, end]},
+			},
+    		include: [
+    			{
+    				model: Contract,
+    				include: [
+    					{
+    						model: Profile,
+    						as: "Contractor",
+    						attributes: [ 
+    							"type",
+    							"profession",
+    							[sequelize.fn('sum', sequelize.col('price')), 'total_paid']],
+    					}
+    				]
+    			},
+    			
+    		],
+    		group: ["profession"],
+    	}
+
+    try{
+    	const jobs = await Job.findAll(jobsFilter)
+
+	    if(!jobs) return res.status(404).end()
+
+	    var max_profession = ""
+		var max_earned = 0
+
+	    jobs.forEach(job => {
+	    	total_paid = job.Contract.Contractor.dataValues.total_paid
+	    	profession = job.Contract.Contractor.profession
+	    	if(total_paid > max_earned){
+	    		max_earned = total_paid
+	    		max_profession = profession
+	    	}
+	    })
+    	res.json({"max_profession": max_profession,"start":start,"end":end})
+    }
+    catch(err){
+    	console.log(err)
+    	return res.status(500).end("Check the date format, or other input error")
+    }
+
+})
+
+
+app.get('/admin/best-clients',getProfile ,async (req, res) =>{
+	const {Contract, Job, Profile} = req.app.get('models')
+    const profileId  = req.profile.id // TODO: authentication? 
+
+	const limit_results = req.query.limit ? req.query.limit : 1
+	const start = req.query.start
+	const end = req.query.end
+
+	if(start == undefined || end == undefined) return res.status(400).end("Start and end parameters required in the query string")
+
+    const jobsFilter = 
+    	{
+    		where:{
+					paid: 1,
+					paymentDate: {[Op.between]: [start, end]},
+			},
+    		include: [
+    			{
+    				model: Contract,
+    				include: [
+    					{
+    						model: Profile,
+    						as: "Client",
+    						attributes: [ 
+    							"id",
+    							"firstName",
+    							"lastName",
+    							[sequelize.fn('sum', sequelize.col('price')), 'total_paid'],
+    						],
+    					}
+    				]
+    			},
+    			
+    		],
+    		group: ['ClientId'],
+    		order: sequelize.literal('`Contract.Client.total_paid` DESC'),
+    		limit: limit_results,
+    	}
+
+    try{
+    	const jobs = await Job.findAll(jobsFilter)
+
+	    if(!jobs) return res.status(404).end()
+
+	    var best_clients = []
+
+	    jobs.forEach(job => {
+	    	const full_name = `${job.Contract.Client.firstName} ${job.Contract.Client.lastName}` 
+	    	const id = job.Contract.Client.id
+	    	const total_paid = job.Contract.Client.dataValues.total_paid
+
+	    	best_clients.push({id,full_name,total_paid})
+	    })
+    	res.json(best_clients)
+    }
+    catch(err){
+    	console.log(err)
+    	return res.status(500).end("Check the date format, or other input error")
+    }
+
+})
 
 module.exports = app;
